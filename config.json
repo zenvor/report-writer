@@ -1,0 +1,36 @@
+{
+    "excel_columns": {
+        "date": 6,
+        "content": 7,
+        "hours": 8
+    },
+    "retry_config": {
+        "max_retries": 3,
+        "backoff_factor": 2,
+        "timeout": 10
+    },
+    "deepseek_config": {
+        "model": "deepseek-chat",
+        "temperature": 0.4,
+        "max_tokens": 100,
+        "system_prompt": "你是一名中国程序员，擅长写精炼的技术日报。请将提交信息总结为最多2句话，每句话不超过30字。"
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "file": "report_writer.log"
+    },
+    "schedule": {
+        "enabled": true,
+        "hour": 18,
+        "minute": 0,
+        "timezone": "Asia/Shanghai"
+    },
+    "backup": {
+        "enabled": true,
+        "max_backups": 5
+    },
+    "gitlab": {
+        "default_branch": "dev"
+    }
+} 
