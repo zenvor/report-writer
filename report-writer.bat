@@ -15,6 +15,4 @@ python src\report_writer.py %*
 REM 如果运行失败，尝试使用python3
 if %errorlevel% neq 0 (
     python3 src\report_writer.py %*
-)
-
-pause 
+) 
