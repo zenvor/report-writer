@@ -65,7 +65,7 @@ class GitLabClient:
     
     def _get_default_branch(self) -> str:
         """获取默认分支"""
-        return config.get_env_or_config("GITLAB_BRANCH", "gitlab.default_branch", "dev")
+        return config.get_env_or_config("GITLAB_BRANCH", "gitlab.default_branch", "master")
     
     def _create_session(self) -> requests.Session:
         """创建带有重试机制的会话"""
