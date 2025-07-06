@@ -1,53 +1,40 @@
 # ReportWriter 使用指南
 
-## 使用格式
+## 📋 使用语法
 
 ```bash
-./report-writer [-f Excel文件] [-d YYYY-MM-DD] [-w 工时] [-v[v[v]]] [--daemon|--run-once|--health-check|--status]
-./report-writer [-C config.json] [--gitlab-url URL] [--gitlab-token TOKEN] [--gitlab-project ID] [--gitlab-branch BRANCH] [--deepseek-key KEY]
+./report-writer [-V] [-v[v[v]]] [-f Excel文件|文本文件] [-d YYYY-MM-DD] [-w 工时] [-C config.json] [--daemon|--run-once|--health-check|--status]
+./report-writer [--gitlab-url URL] [--gitlab-token TOKEN] [--gitlab-project ID] [--gitlab-branch BRANCH] [--deepseek-key KEY]
 ./report-writer -V
-```
+	-V                 : 显示版本信息
+	-v[v[v]]           : 日志详细程度 (v=INFO, vv=DEBUG, vvv=TRACE)
+	
+	-f 文件路径        : 指定Excel文件或文本文件路径
+	-d YYYY-MM-DD      : 指定日期 (默认: 今天)
+	-w 工时            : 指定工作小时数 (默认: 8，仅Excel模式)
+	[文件路径]         : 要处理的Excel文件或文本文件路径
+	
+	-C config.json     : 加载配置文件 (默认: config.json)
+	
+	--run-once         : 执行一次更新后退出 (默认模式)
+	--daemon           : 启动守护进程模式 (定时调度，仅Excel模式)
+	--health-check     : 执行健康检查
+	--status           : 显示调度器状态 (仅Excel模式)
 
-### 参数说明
+	--gitlab-url URL   : GitLab服务器地址
+	--gitlab-token TOKEN : GitLab访问令牌
+	--gitlab-project ID : 项目ID
+	--gitlab-branch BRANCH : 分支名称 (默认: dev)
 
-```
--v[v[v]]           : 日志详细程度 (v=INFO, vv=DEBUG, vvv=TRACE)
--V                 : 显示版本信息
--C config.json     : 加载配置文件 (默认: config.json)
--f Excel文件       : 指定Excel文件路径
--d YYYY-MM-DD      : 指定日期 (默认: 今天)
--w 工时            : 指定工作小时数 (默认: 8)
+	--deepseek-key KEY : Deepseek API密钥
 
-模式选项:
---run-once         : 执行一次更新后退出 (默认模式)
---daemon           : 启动守护进程模式 (定时调度)
---health-check     : 执行健康检查
---status           : 显示调度器状态
-
-GitLab选项:
---gitlab-url URL   : GitLab服务器地址
---gitlab-token TOKEN : GitLab访问令牌
---gitlab-project ID : 项目ID
---gitlab-branch BRANCH : 分支名称 (默认: dev)
-
-AI选项:
---deepseek-key KEY : Deepseek API密钥
-```
-
-### 使用示例
-
-```bash
-./report-writer                                    # 自动查找Excel文件并执行一次更新
-./report-writer --daemon                           # 启动定时调度模式
-./report-writer -f data/月报.xlsx                  # 指定Excel文件
-./report-writer -d 2025-01-15                      # 指定日期
-./report-writer -v --health-check                  # 详细日志模式下的健康检查
-./report-writer -V                                 # 显示版本信息
+文件模式:
+	Excel模式 (.xlsx)  : 完整功能，支持守护进程调度
+	文本模式 (.txt)    : 简单日报记录，不支持守护进程
+	自动模式           : 如果data目录中没有.xlsx文件，自动创建.txt文件
 ```
 
 ## 🚀 快速开始
-
-ReportWriter 现在提供了更加简洁和强大的命令行界面，参考了 webrtc-streamer 的设计理念。
 
 ### 基本使用
 
@@ -63,9 +50,6 @@ ReportWriter 现在提供了更加简洁和强大的命令行界面，参考了 
 
 # 显示版本信息
 ./report-writer -V
-
-# 显示帮助信息
-./report-writer -h
 ```
 
 ### 指定参数
@@ -100,41 +84,6 @@ ReportWriter 现在提供了更加简洁和强大的命令行界面，参考了 
 ./report-writer -vvv
 ```
 
-### 守护进程模式
-
-```bash
-# 启动定时调度
-./report-writer --daemon
-
-# 启动调度并显示详细日志
-./report-writer -v --daemon
-
-# 查看调度器状态
-./report-writer --status
-```
-
-### 命令行配置
-
-你可以通过命令行直接设置GitLab和AI配置，无需修改环境变量文件：
-
-```bash
-# 设置GitLab配置
-./report-writer --gitlab-url http://your-gitlab.com \
-                --gitlab-token glpat-xxxxxxxxxxxx \
-                --gitlab-project 173 \
-                --gitlab-branch dev
-
-# 设置AI配置
-./report-writer --deepseek-key sk-xxxxxxxxxxxxxxxx
-
-# 组合使用
-./report-writer --gitlab-url http://your-gitlab.com \
-                --gitlab-token glpat-xxxxxxxxxxxx \
-                --gitlab-project 173 \
-                --deepseek-key sk-xxxxxxxxxxxxxxxx \
-                --daemon
-```
-
 ## 🎯 使用场景
 
 ### 1. 日常使用
@@ -158,6 +107,12 @@ ReportWriter 现在提供了更加简洁和强大的命令行界面，参考了 
 ```bash
 # 启动定时调度（每天18:00自动执行）
 ./report-writer --daemon
+
+# 启动调度并显示详细日志
+./report-writer -v --daemon
+
+# 查看调度器状态
+./report-writer --status
 ```
 
 ### 4. 故障排除
@@ -173,7 +128,41 @@ ReportWriter 现在提供了更加简洁和强大的命令行界面，参考了 
 ./report-writer --status
 ```
 
-## 🔧 Windows 用户
+## 🔧 高级配置
+
+### 命令行配置覆盖
+
+你可以通过命令行直接设置 GitLab 和 AI 配置，无需修改环境变量文件：
+
+```bash
+# 设置GitLab配置
+./report-writer --gitlab-url http://your-gitlab.com \
+                --gitlab-token glpat-xxxxxxxxxxxx \
+                --gitlab-project 173 \
+                --gitlab-branch dev
+
+# 设置AI配置
+./report-writer --deepseek-key sk-xxxxxxxxxxxxxxxx
+
+# 组合使用
+./report-writer --gitlab-url http://your-gitlab.com \
+                --gitlab-token glpat-xxxxxxxxxxxx \
+                --gitlab-project 173 \
+                --deepseek-key sk-xxxxxxxxxxxxxxxx \
+                --daemon
+```
+
+### 自定义配置文件
+
+```bash
+# 使用自定义配置文件
+./report-writer -C custom.json
+
+# 组合使用
+./report-writer -C custom.json --gitlab-branch main
+```
+
+## 🖥️ Windows 用户
 
 Windows 用户可以使用批处理文件：
 
@@ -255,4 +244,4 @@ $ ./report-writer --status
 
 - [完整 README](README.md) - 详细的安装和配置指南
 - [配置文件说明](config.json) - 配置选项详解
-- [环境变量模板](env.template) - 环境变量设置示例 
+- [环境变量模板](env.template) - 环境变量设置示例
