@@ -18,7 +18,7 @@ from updater import ReportUpdater, ReportUpdaterError
 from scheduler import ReportScheduler, SchedulerError
 
 # 版本信息
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # 程序信息
 PROGRAM_NAME = "ReportWriter"
@@ -28,6 +28,7 @@ PROGRAM_DESC = "自动化日报写入工具"
 DEFAULT_CONFIG_FILE = "config.json"
 DEFAULT_DATA_DIR = "data"
 DEFAULT_EXCEL_FILE = "月报.xlsx"
+DEFAULT_TEXT_FILE = "日报.txt"
 
 logger = logging.getLogger(__name__)
 
@@ -38,25 +39,108 @@ class ReportWriterError(Exception):
 
 
 def find_excel_file(data_dir: str = DEFAULT_DATA_DIR) -> Optional[str]:
-    """自动查找Excel文件"""
+    """自动查找Excel文件，如果没有找到则创建txt文件"""
     data_path = Path(data_dir)
     
+    # 确保数据目录存在
     if not data_path.exists():
-        return None
+        data_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"创建数据目录: {data_path}")
     
     # 查找.xlsx文件
     excel_files = list(data_path.glob("*.xlsx"))
     
-    if not excel_files:
-        return None
+    if excel_files:
+        # 优先返回包含"月报"的文件
+        for file in excel_files:
+            if "月报" in file.name:
+                logger.info(f"找到月报文件: {file}")
+                return str(file)
+        
+        # 返回第一个找到的Excel文件
+        logger.info(f"找到Excel文件: {excel_files[0]}")
+        return str(excel_files[0])
     
-    # 优先返回包含"月报"的文件
-    for file in excel_files:
-        if "月报" in file.name:
-            return str(file)
+    # 如果没有找到Excel文件，创建txt文件
+    logger.info("未找到Excel文件，将创建txt文件用于日报记录")
+    txt_file_path = data_path / DEFAULT_TEXT_FILE
     
-    # 返回第一个找到的Excel文件
-    return str(excel_files[0])
+    # 创建txt文件（如果不存在）
+    if not txt_file_path.exists():
+        try:
+            with open(txt_file_path, 'w', encoding='utf-8') as f:
+                f.write("# 日报记录\n")
+                f.write("# 格式：日期 - 日报内容\n")
+                f.write("# 自动生成于：{}\n\n".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            logger.info(f"创建日报文件: {txt_file_path}")
+        except Exception as e:
+            logger.error(f"创建日报文件失败: {e}")
+            return None
+    
+    return str(txt_file_path)
+
+
+def write_to_text_file(txt_path: str, date_obj: datetime, summary: str) -> bool:
+    """写入内容到文本文件"""
+    try:
+        # 读取现有内容
+        existing_content = ""
+        if os.path.exists(txt_path):
+            with open(txt_path, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+        
+        # 检查是否已存在当天的记录
+        target_date = date_obj.strftime("%Y-%m-%d")
+        if target_date in existing_content:
+            logger.warning(f"日期 {target_date} 的记录已存在，跳过写入")
+            return True
+        
+        # 追加新的日报记录
+        with open(txt_path, 'a', encoding='utf-8') as f:
+            f.write(f"{target_date} - {summary}\n")
+        
+        logger.info(f"成功写入日报: {target_date}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"写入文本文件失败: {e}")
+        return False
+
+
+def is_text_file(file_path: str) -> bool:
+    """检查文件是否为文本文件"""
+    return file_path.lower().endswith('.txt')
+
+
+def run_once_mode_text(txt_file: str, date_obj: datetime, hours: int) -> bool:
+    """文本文件模式的一次性运行"""
+    logger.info(f"执行文本文件模式更新: {txt_file}, 日期: {date_obj.strftime('%Y-%m-%d')}")
+    
+    try:
+        # 创建ReportUpdater实例来获取日报数据
+        updater = ReportUpdater()
+        
+        # 获取提交信息
+        commits = updater._fetch_commits_safely(date_obj)
+        
+        # 生成摘要
+        summary = updater._generate_summary_with_fallback(commits)
+        
+        # 写入文本文件
+        success = write_to_text_file(txt_file, date_obj, summary)
+        
+        if success:
+            print(f"✅ 日报更新成功: {date_obj.strftime('%Y-%m-%d')}")
+            print(f"📝 日报内容: {summary}")
+            return True
+        else:
+            print(f"❌ 日报更新失败: {date_obj.strftime('%Y-%m-%d')}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"文本文件模式更新失败: {e}")
+        print(f"❌ 更新失败: {e}")
+        return False
 
 
 def print_version():
@@ -72,22 +156,22 @@ def print_version():
 
 def print_help():
     """打印帮助信息"""
-    print(f"./report-writer [-f Excel文件] [-d YYYY-MM-DD] [-w 工时] [-v[v[v]]] [--daemon|--run-once|--health-check|--status]")
+    print(f"./report-writer [-f Excel文件|文本文件] [-d YYYY-MM-DD] [-w 工时] [-v[v[v]]] [--daemon|--run-once|--health-check|--status]")
     print(f"./report-writer [-C config.json] [--gitlab-url URL] [--gitlab-token TOKEN] [--gitlab-project ID] [--gitlab-branch BRANCH] [--deepseek-key KEY]")
     print(f"./report-writer -V")
     print()
     print("  -v[v[v]]           : 日志详细程度 (v=INFO, vv=DEBUG, vvv=TRACE)")
     print("  -V                 : 显示版本信息")
     print("  -C config.json     : 加载配置文件 (默认: config.json)")
-    print("  -f Excel文件       : 指定Excel文件路径")
+    print("  -f 文件路径        : 指定Excel文件或文本文件路径")
     print("  -d YYYY-MM-DD      : 指定日期 (默认: 今天)")
-    print("  -w 工时            : 指定工作小时数 (默认: 8)")
-    print("  [Excel文件路径]    : 要处理的Excel文件路径")
+    print("  -w 工时            : 指定工作小时数 (默认: 8，仅Excel模式)")
+    print("  [文件路径]         : 要处理的Excel文件或文本文件路径")
     print()
     print("  --run-once         : 执行一次更新后退出")
-    print("  --daemon           : 启动守护进程模式 (定时调度)")
+    print("  --daemon           : 启动守护进程模式 (定时调度，仅Excel模式)")
     print("  --health-check     : 执行健康检查")
-    print("  --status           : 显示调度器状态")
+    print("  --status           : 显示调度器状态 (仅Excel模式)")
     print()
     print("  --gitlab-url URL   : GitLab服务器地址")
     print("  --gitlab-token TOKEN : GitLab访问令牌")
@@ -96,10 +180,16 @@ def print_help():
     print()
     print("  --deepseek-key KEY : Deepseek API密钥")
     print()
+    print("文件模式:")
+    print("  Excel模式 (.xlsx)  : 完整功能，支持守护进程调度")
+    print("  文本模式 (.txt)    : 简单日报记录，不支持守护进程")
+    print("  自动模式           : 如果data目录中没有.xlsx文件，自动创建.txt文件")
+    print()
     print("示例:")
     print(f"  {PROGRAM_NAME}                    # 自动查找Excel文件并执行一次更新")
     print(f"  {PROGRAM_NAME} --daemon           # 启动定时调度模式")
     print(f"  {PROGRAM_NAME} -f data/月报.xlsx  # 指定Excel文件")
+    print(f"  {PROGRAM_NAME} -f data/日报.txt   # 指定文本文件")
     print(f"  {PROGRAM_NAME} -d 2025-01-15      # 指定日期")
     print(f"  {PROGRAM_NAME} --health-check     # 健康检查")
     print(f"  {PROGRAM_NAME} -V                 # 显示版本")
@@ -153,6 +243,10 @@ def validate_hours(hours_str: str) -> int:
 
 def run_once_mode(excel_file: str, date_obj: datetime, hours: int) -> bool:
     """执行一次更新模式"""
+    # 检查是否为文本文件
+    if is_text_file(excel_file):
+        return run_once_mode_text(excel_file, date_obj, hours)
+    
     logger.info(f"执行一次更新: {excel_file}, 日期: {date_obj.strftime('%Y-%m-%d')}, 工时: {hours}")
     
     try:
@@ -178,6 +272,11 @@ def run_once_mode(excel_file: str, date_obj: datetime, hours: int) -> bool:
 
 def daemon_mode(excel_file: str) -> bool:
     """守护进程模式"""
+    # 文本文件模式不支持守护进程
+    if is_text_file(excel_file):
+        print("❌ 文本文件模式不支持守护进程调度，请使用Excel文件")
+        return False
+    
     logger.info(f"启动守护进程模式: {excel_file}")
     
     try:
@@ -236,6 +335,11 @@ def health_check_mode() -> bool:
 
 def status_mode(excel_file: str) -> bool:
     """状态查看模式"""
+    # 文本文件模式不支持状态查看
+    if is_text_file(excel_file):
+        print("❌ 文本文件模式不支持状态查看，请使用Excel文件")
+        return False
+    
     logger.info("查看调度器状态")
     
     try:
@@ -274,6 +378,10 @@ def main():
   GITLAB_PROJECT_ID           # 项目ID
   GITLAB_BRANCH               # 分支名称
   DEEPSEEK_API_KEY            # Deepseek API密钥
+
+注意：
+  如果data目录中没有.xlsx文件，程序会自动创建.txt文件用于日报记录。
+  文本文件模式不支持守护进程调度和状态查看功能。
         """,
         add_help=False
     )
@@ -342,14 +450,35 @@ def main():
         if not excel_file:
             excel_file = find_excel_file()
             if not excel_file:
-                print("❌ 未找到Excel文件，请使用 -f 选项指定文件路径")
+                print("❌ 未找到Excel文件且无法创建文本文件，请使用 -f 选项指定文件路径")
                 return 1
-            print(f"📁 自动找到Excel文件: {excel_file}")
+            
+            # 判断是新创建的文本文件还是找到的Excel文件
+            if is_text_file(excel_file):
+                print(f"📝 自动创建文本文件: {excel_file}")
+            else:
+                print(f"📁 自动找到Excel文件: {excel_file}")
         
-        # 验证Excel文件存在
+        # 验证文件存在（对于txt文件，如果不存在则自动创建）
         if not os.path.exists(excel_file):
-            print(f"❌ Excel文件不存在: {excel_file}")
-            return 1
+            if is_text_file(excel_file):
+                # 对于文本文件，如果不存在则自动创建
+                try:
+                    # 确保目录存在
+                    file_dir = os.path.dirname(excel_file)
+                    if file_dir:
+                        os.makedirs(file_dir, exist_ok=True)
+                    with open(excel_file, 'w', encoding='utf-8') as f:
+                        f.write("# 日报记录\n")
+                        f.write("# 格式：日期 - 日报内容\n")
+                        f.write("# 自动生成于：{}\n\n".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    print(f"📝 自动创建文本文件: {excel_file}")
+                except Exception as e:
+                    print(f"❌ 创建文本文件失败: {e}")
+                    return 1
+            else:
+                print(f"❌ 文件不存在: {excel_file}")
+                return 1
         
         # 状态查看模式
         if args.status:

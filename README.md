@@ -8,6 +8,7 @@
 - 📊 **GitLab 集成**：自动获取指定项目的提交信息
 - 🤖 **AI 生成摘要**：使用 Deepseek API 生成精炼的中文日报
 - 📋 **Excel 操作**：自动写入月报表格的对应日期行
+- 📝 **文本文件支持**：如果没有 Excel 文件，自动创建文本文件记录日报
 - 🛡️ **错误处理**：完善的错误处理和重试机制
 - 💾 **文件备份**：自动备份 Excel 文件，防止数据丢失
 - 📈 **健康检查**：内置健康检查功能，便于监控
@@ -69,13 +70,34 @@ DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # HTTPS_PROXY=https://proxy.example.com:8080
 ```
 
-### 5. 准备 Excel 文件
+### 5. 准备文件
+
+#### Excel 模式（推荐）
 
 将月报 Excel 文件放在 `data/` 目录中，例如：
 ```
 data/
 ├── 2025年1月月报.xlsx
 └── backups/           # 自动备份目录
+```
+
+#### 文本模式（开源友好）
+
+如果您的 `data/` 目录中没有 Excel 文件，程序会自动创建文本文件来记录日报：
+```
+data/
+└── 日报.txt          # 自动创建的日报文件
+```
+
+文本文件格式：
+```
+# 日报记录
+# 格式：日期 - 日报内容
+# 自动生成于：2025-07-06 13:09:00
+
+2025-01-06 - 完成了用户认证模块的开发
+2025-01-07 - 修复了登录页面的UI问题
+2025-01-08 - 优化了数据库查询性能
 ```
 
 ### 6. 运行程序
@@ -140,7 +162,8 @@ python3 src/scheduler.py --file data/月报.xlsx
 ./report-writer -h                 # 显示帮助信息
 
 # 高级用法
-./report-writer -f data/月报.xlsx -d 2025-01-15 -w 8  # 指定文件、日期和工时
+./report-writer -f data/月报.xlsx -d 2025-01-15 -w 8  # 指定Excel文件、日期和工时
+./report-writer -f data/日报.txt -d 2025-01-15       # 指定文本文件和日期
 ./report-writer -v --daemon        # 启动调度器并显示详细日志
 ./report-writer --status           # 查看调度器状态
 ```
@@ -152,16 +175,16 @@ python3 src/scheduler.py --file data/月报.xlsx
   -v[v[v]]           : 日志详细程度 (v=INFO, vv=DEBUG, vvv=TRACE)
   -V                 : 显示版本信息
   -C config.json     : 加载配置文件 (默认: config.json)
-  -f Excel文件       : 指定Excel文件路径
+  -f 文件路径        : 指定Excel文件或文本文件路径
   -d YYYY-MM-DD      : 指定日期 (默认: 今天)
-  -w 工时            : 指定工作小时数 (默认: 8)
-  [Excel文件路径]    : 要处理的Excel文件路径
+  -w 工时            : 指定工作小时数 (默认: 8，仅Excel模式)
+  [文件路径]         : 要处理的Excel文件或文本文件路径
 
 模式:
   --run-once         : 执行一次更新后退出
-  --daemon           : 启动守护进程模式 (定时调度)
+  --daemon           : 启动守护进程模式 (定时调度，仅Excel模式)
   --health-check     : 执行健康检查
-  --status           : 显示调度器状态
+  --status           : 显示调度器状态 (仅Excel模式)
 
 GitLab选项:
   --gitlab-url URL   : GitLab服务器地址
@@ -171,6 +194,11 @@ GitLab选项:
 
 AI选项:
   --deepseek-key KEY : Deepseek API密钥
+
+文件模式:
+  Excel模式 (.xlsx)  : 完整功能，支持守护进程调度和工时记录
+  文本模式 (.txt)    : 简单日报记录，仅支持一次性更新
+  自动模式           : 如果data目录中没有.xlsx文件，自动创建.txt文件
 ```
 
 ### 🔧 经典命令行工具（仍然支持）
