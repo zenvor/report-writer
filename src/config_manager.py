@@ -7,7 +7,7 @@ from pathlib import Path
 # 自动加载环境变量
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:
     # 如果没有安装 python-dotenv，跳过
     pass
@@ -77,7 +77,8 @@ class ConfigManager:
                 "max_backups": 5
             },
             "gitlab": {
-                "default_branch": "dev"
+                "default_branch": "dev",
+                "projects": []
             }
         }
     
@@ -106,7 +107,18 @@ class ConfigManager:
             backup = self.config.get("backup", {})
             if "max_backups" in backup and backup["max_backups"] < 1:
                 raise ConfigurationError("max_backups 必须是正整数")
-                
+
+            # 验证多项目配置
+            projects = self.config.get("gitlab.projects", [])
+            if not isinstance(projects, list):
+                raise ConfigurationError("gitlab.projects 必须是一个列表")
+            
+            for i, project in enumerate(projects):
+                if not isinstance(project, dict):
+                    raise ConfigurationError(f"gitlab.projects 中第 {i+1} 个元素必须是字典")
+                if "id" not in project:
+                    raise ConfigurationError(f"gitlab.projects 中第 {i+1} 个项目缺少 'id' 字段")
+
         except Exception as e:
             raise ConfigurationError(f"配置验证失败: {e}")
     

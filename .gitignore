@@ -57,3 +57,7 @@ config_local.json
 *.tmp
 *.temp
 debug_*.py 
+
+# Excel files
+*.xlsx
+*.xls
