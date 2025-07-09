@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any
 import requests
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+from openpyxl.styles import Alignment
 
 from config_manager import config, ConfigurationError
 from gitlab_client import GitLabClient, GitLabClientError
@@ -42,7 +43,13 @@ class ReportUpdater:
     """日报更新器，负责整个日报更新流程"""
     
     def __init__(self):
-        self.gitlab_client = GitLabClient()
+        self.projects = config.get("gitlab.projects", [])
+        self.default_branch = config.get("gitlab.default_branch", "master")
+        self.gitlab_client = None  # 在单项目模式下使用
+
+        if not self.projects:
+            self.gitlab_client = GitLabClient()
+
         self.deepseek_api_key = config.get_env_or_config("DEEPSEEK_API_KEY", "deepseek.api_key")
         
         # 从配置中获取 Excel 列配置
@@ -64,10 +71,10 @@ class ReportUpdater:
             self._create_backup_with_validation(xlsx_path)
             
             # 3. 获取提交信息
-            commits = self._fetch_commits_safely(date_obj)
+            all_commits = self._fetch_all_commits(date_obj)
             
             # 4. 生成日报摘要
-            summary = self._generate_summary_with_fallback(commits)
+            summary = self._generate_summary_with_fallback(all_commits)
             
             # 5. 写入 Excel
             self._write_to_excel_safely(xlsx_path, date_obj, summary, work_hours)
@@ -99,26 +106,58 @@ class ReportUpdater:
         if not self._create_backup(xlsx_path):
             raise BackupError("创建备份失败")
     
-    def _fetch_commits_safely(self, date_obj: datetime) -> List[str]:
-        """安全地获取提交信息"""
+    def _fetch_all_commits(self, date_obj: datetime) -> Dict[str, List[str]]:
+        """获取所有项目的提交信息"""
+        all_commits = {}
+
+        if self.projects:
+            # 多项目模式
+            for project in self.projects:
+                project_id = project.get("id")
+                branch = project.get("branch", self.default_branch)
+                client = GitLabClient(project_id=str(project_id), branch=branch)
+                
+                logger.info(f"正在获取项目 {project_id} (分支: {branch}) 的提交")
+                commits = self._fetch_commits_safely(client, date_obj)
+                if commits:
+                    all_commits[str(project_id)] = commits
+        else:
+            # 单项目模式
+            logger.info("单项目模式，获取提交")
+            if self.gitlab_client:
+                commits = self._fetch_commits_safely(self.gitlab_client, date_obj)
+                if commits:
+                    all_commits[self.gitlab_client.project_id] = commits
+
+        return all_commits
+
+    def _fetch_commits_safely(self, client: GitLabClient, date_obj: datetime) -> List[str]:
+        """安全地获取单个项目的提交信息"""
         try:
-            commits = self.gitlab_client.fetch_commits(date_obj)
-            logger.info(f"获取到 {len(commits)} 条提交信息")
+            commits = client.fetch_commits(date_obj)
+            logger.info(f"项目 {client.project_id}: 获取到 {len(commits)} 条提交信息")
             return commits
         except GitLabClientError as e:
-            logger.warning(f"获取提交信息失败: {e}")
+            logger.warning(f"项目 {client.project_id}: 获取提交信息失败: {e}")
             return []
     
-    def _generate_summary_with_fallback(self, commits: List[str]) -> str:
+    def _generate_summary_with_fallback(self, all_commits: Dict[str, List[str]]) -> str:
         """生成摘要，带降级处理"""
+        if not all_commits:
+            return DEFAULT_SUMMARY_FALLBACK
+
         try:
-            summary = self._generate_summary(commits)
-            logger.info(f"生成日报摘要: {summary[:50]}...")
+            summary = self._generate_summary(all_commits)
+            if not summary:
+                logger.warning("AI生成摘要为空，使用简单摘要")
+                summary = self._create_simple_summary_for_all(all_commits)
+            
+            logger.info(f"生成日报摘要:\n{summary}")
             return summary
         except Exception as e:
-            logger.error(f"生成摘要失败: {e}")
-            return DEFAULT_SUMMARY_FALLBACK
-    
+            logger.error(f"生成摘要失败: {e}，将使用简单摘要")
+            return self._create_simple_summary_for_all(all_commits)
+
     def _write_to_excel_safely(self, xlsx_path: str, date_obj: datetime, summary: str, work_hours: int) -> None:
         """安全地写入Excel"""
         if not self._write_to_excel(xlsx_path, date_obj, summary, work_hours):
@@ -169,27 +208,62 @@ class ReportUpdater:
         except Exception as e:
             logger.warning(f"清理旧备份时出错: {e}")
     
-    def _generate_summary(self, commits: List[str]) -> str:
+    def _generate_summary(self, all_commits: Dict[str, List[str]]) -> str:
         """生成日报摘要"""
-        if not commits:
-            logger.info("没有提交信息，返回默认内容")
+        if not all_commits:
             return DEFAULT_SUMMARY_FALLBACK
-        
-        # 如果没有配置 API Key，使用简单拼接
+
+        if len(all_commits) == 1:
+            # 单项目，逻辑不变
+            project_id, commits = next(iter(all_commits.items()))
+            return self._generate_single_project_summary(commits)
+
+        # 多项目，分别总结再合并
+        summaries = []
+        for project_id, commits in all_commits.items():
+            if not commits:
+                continue
+            
+            logger.info(f"为项目 {project_id} 生成摘要")
+            single_summary = self._generate_single_project_summary(commits)
+            summaries.append(single_summary)
+
+        if not summaries:
+            return DEFAULT_SUMMARY_FALLBACK
+
+        # 添加序号并合并
+        return "\n".join(f"{i+1}. {s}" for i, s in enumerate(summaries))
+
+    def _generate_single_project_summary(self, commits: List[str]) -> str:
+        """为单个项目生成摘要"""
         if not self.deepseek_api_key:
-            logger.warning("未配置 Deepseek API Key，使用简单拼接")
+            logger.warning("未配置 Deepseek API Key，使用简单摘要")
             return self._create_simple_summary(commits)
         
         try:
+            logger.info("使用 Deepseek API 生成摘要")
             return self._call_deepseek_api(commits)
         except AIServiceError as e:
             logger.error(f"调用 Deepseek API 失败: {e}")
-            # 降级处理
             return self._create_simple_summary(commits)
     
+    def _create_simple_summary_for_all(self, all_commits: Dict[str, List[str]]) -> str:
+        """为所有项目创建简单的摘要"""
+        if not all_commits:
+            return DEFAULT_SUMMARY_FALLBACK
+
+        summaries = []
+        for project_id, commits in all_commits.items():
+            if not commits:
+                continue
+            summary = self._create_simple_summary(commits)
+            summaries.append(f"项目 {project_id}: {summary}")
+        
+        return "\n".join(summaries)
+
     def _create_simple_summary(self, commits: List[str]) -> str:
         """创建简单的摘要"""
-        return " / ".join(commits[:MAX_COMMIT_DISPLAY])
+        return ", ".join(commits[:MAX_COMMIT_DISPLAY])
     
     def _call_deepseek_api(self, commits: List[str]) -> str:
         """调用 Deepseek API 生成摘要"""
@@ -309,8 +383,10 @@ class ReportUpdater:
             if cell_value and str(cell_value).strip() == target_date:
                 logger.info(f"找到日期行: 第 {row} 行")
                 
-                # 写入工作内容
-                worksheet.cell(row, self.content_column, summary)
+                # 写入工作内容并设置自动换行
+                content_cell = worksheet.cell(row=row, column=self.content_column)
+                content_cell.value = summary
+                content_cell.alignment = Alignment(wrap_text=True)
                 
                 # 如果工时列为空，填入默认工时
                 if not worksheet.cell(row, self.hours_column).value:

@@ -30,11 +30,13 @@ class GitLabClientError(Exception):
 class GitLabClient:
     """GitLab API 客户端，负责获取提交信息"""
     
-    def __init__(self):
+    def __init__(self, project_id: Optional[str] = None, branch: Optional[str] = None):
         self.base_url = self._get_base_url()
-        self.project_id = self._get_project_id()
         self.token = self._get_token()
-        self.default_branch = self._get_default_branch()
+        
+        # 优先使用传入的参数，否则从配置中获取
+        self.project_id = self._get_project_id(project_id)
+        self.default_branch = self._get_default_branch(branch)
         
         if not all([self.base_url, self.project_id, self.token]):
             logger.warning("GitLab 配置不完整，某些功能可能无法使用")
@@ -55,17 +57,17 @@ class GitLabClient:
             url = url.rstrip('/')
         return url
     
-    def _get_project_id(self) -> Optional[str]:
+    def _get_project_id(self, project_id: Optional[str] = None) -> Optional[str]:
         """获取项目ID"""
-        return config.get_env_or_config("GITLAB_PROJECT_ID", "gitlab.project_id")
+        return project_id or config.get_env_or_config("GITLAB_PROJECT_ID", "gitlab.project_id")
     
     def _get_token(self) -> Optional[str]:
         """获取访问令牌"""
         return config.get_env_or_config("GITLAB_TOKEN", "gitlab.token")
     
-    def _get_default_branch(self) -> str:
+    def _get_default_branch(self, branch: Optional[str] = None) -> str:
         """获取默认分支"""
-        return config.get_env_or_config("GITLAB_BRANCH", "gitlab.default_branch", "master")
+        return branch or config.get_env_or_config("GITLAB_BRANCH", "gitlab.default_branch", "master")
     
     def _create_session(self) -> requests.Session:
         """创建带有重试机制的会话"""

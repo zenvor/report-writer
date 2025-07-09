@@ -120,11 +120,11 @@ def run_once_mode_text(txt_file: str, date_obj: datetime, hours: int) -> bool:
         # 创建ReportUpdater实例来获取日报数据
         updater = ReportUpdater()
         
-        # 获取提交信息
-        commits = updater._fetch_commits_safely(date_obj)
+        # 获取所有项目的提交信息
+        all_commits = updater._fetch_all_commits(date_obj)
         
         # 生成摘要
-        summary = updater._generate_summary_with_fallback(commits)
+        summary = updater._generate_summary_with_fallback(all_commits)
         
         # 写入文本文件
         success = write_to_text_file(txt_file, date_obj, summary)
