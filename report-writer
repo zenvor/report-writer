@@ -1,5 +1,6 @@
 #!/bin/bash
 # ReportWriter 启动脚本
+set -euo pipefail
 
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -7,15 +8,39 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # 切换到项目根目录
 cd "$SCRIPT_DIR"
 
-# 检查并激活虚拟环境
+# 检查并激活虚拟环境；如不存在则自动创建并安装依赖
 if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
 elif [ -f "venv/Scripts/activate" ]; then
     source venv/Scripts/activate
 else
-    echo "⚠️  未找到虚拟环境，请先运行: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"
-    exit 1
+    echo "🔧 未找到虚拟环境，正在自动创建 venv 并安装依赖..."
+    # 选择可用的 Python 解释器
+    python_bin="python3"
+    if ! command -v "$python_bin" >/dev/null 2>&1; then
+        if command -v python >/dev/null 2>&1; then
+            python_bin="python"
+        else
+            echo "❌ 未找到 Python，请先安装 Python3 后重试"
+            exit 1
+        fi
+    fi
+    "$python_bin" -m venv venv
+    # 激活并安装依赖
+    if [ -f "venv/bin/activate" ]; then
+        source venv/bin/activate
+    else
+        # 兼容部分环境
+        source venv/Scripts/activate || true
+    fi
+    if [ -f "requirements.txt" ]; then
+        echo "📦 正在安装依赖..."
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+    else
+        echo "⚠️  未找到 requirements.txt，跳过依赖安装"
+    fi
 fi
 
 # 运行主程序
-python3 src/report_writer.py "$@" 
+python src/report_writer.py "$@"

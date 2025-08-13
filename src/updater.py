@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-import requests
+from openai import OpenAI
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.styles import Alignment
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_WORK_HOURS = 8
 DEFAULT_SUMMARY_FALLBACK = "无提交"
 MAX_COMMIT_DISPLAY = 3
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"  # Deepseek API 基础地址
 EXCEL_START_ROW = 3
 
 class ReportUpdaterError(Exception):
@@ -51,6 +51,11 @@ class ReportUpdater:
             self.gitlab_client = GitLabClient()
 
         self.deepseek_api_key = config.get_env_or_config("DEEPSEEK_API_KEY", "deepseek.api_key")
+        
+        if self.deepseek_api_key:
+            self.openai_client = OpenAI(api_key=self.deepseek_api_key, base_url=DEEPSEEK_BASE_URL)
+        else:
+            self.openai_client = None
         
         # 从配置中获取 Excel 列配置
         self.date_column = config.get("excel_columns.date", 6)
@@ -236,7 +241,7 @@ class ReportUpdater:
 
     def _generate_single_project_summary(self, commits: List[str]) -> str:
         """为单个项目生成摘要"""
-        if not self.deepseek_api_key:
+        if not self.openai_client:
             logger.warning("未配置 Deepseek API Key，使用简单摘要")
             return self._create_simple_summary(commits)
         
@@ -270,17 +275,23 @@ class ReportUpdater:
         logger.info("调用 Deepseek API 生成摘要")
         
         prompt = self._create_prompt(commits)
-        payload = self._create_api_payload(prompt)
-        headers = self._create_api_headers()
+        messages = self._create_api_messages(prompt)
         
         try:
-            response = self._make_api_request(payload, headers)
-            return self._extract_summary_from_response(response)
+            deepseek_config = config.get("deepseek_config", {})
+            response = self.openai_client.chat.completions.create(
+                model=deepseek_config.get("model", "deepseek-chat"),
+                messages=messages,
+                stream=False,
+                temperature=deepseek_config.get("temperature", 0.4),
+                max_tokens=deepseek_config.get("max_tokens", 300)
+            )
+            summary = response.choices[0].message.content.strip()
+            logger.info("Deepseek API 调用成功")
+            return summary
             
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise AIServiceError(f"API 请求失败: {e}")
-        except (KeyError, IndexError) as e:
-            raise AIServiceError(f"API 响应格式错误: {e}")
     
     def _create_prompt(self, commits: List[str]) -> str:
         """创建API提示词"""
@@ -289,52 +300,20 @@ class ReportUpdater:
             + "\n".join(f"- {commit}" for commit in commits)
         )
     
-    def _create_api_payload(self, prompt: str) -> Dict[str, Any]:
-        """创建API请求负载"""
+    def _create_api_messages(self, prompt: str) -> List[Dict[str, str]]:
+        """创建API请求消息"""
         deepseek_config = config.get("deepseek_config", {})
         
-        return {
-            "model": deepseek_config.get("model", "deepseek-chat"),
-            "messages": [
-                {
-                    "role": "system", 
-                    "content": deepseek_config.get(
-                        "system_prompt", 
-                        "你是一名中国程序员，擅长写精炼的技术日报。请将提交信息总结为最多2句话，每句话不超过30字。"
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": deepseek_config.get("temperature", 0.4),
-            "max_tokens": deepseek_config.get("max_tokens", 300)
-        }
-    
-    def _create_api_headers(self) -> Dict[str, str]:
-        """创建API请求头"""
-        return {
-            "Authorization": f"Bearer {self.deepseek_api_key}",
-            "Content-Type": "application/json"
-        }
-    
-    def _make_api_request(self, payload: Dict[str, Any], headers: Dict[str, str]) -> Dict[str, Any]:
-        """发起API请求"""
-        timeout = config.get("retry_config.timeout", 20)
-        
-        response = requests.post(
-            DEEPSEEK_API_URL,
-            headers=headers,
-            json=payload,
-            timeout=timeout
-        )
-        response.raise_for_status()
-        
-        return response.json()
-    
-    def _extract_summary_from_response(self, response_data: Dict[str, Any]) -> str:
-        """从API响应中提取摘要"""
-        summary = response_data["choices"][0]["message"]["content"].strip()
-        logger.info("Deepseek API 调用成功")
-        return summary
+        return [
+            {
+                "role": "system", 
+                "content": deepseek_config.get(
+                    "system_prompt", 
+                    "你是一名中国程序员，擅长写精炼的技术日报。请将提交信息总结为最多2句话，每句话不超过30字。"
+                )
+            },
+            {"role": "user", "content": prompt}
+        ]
     
     def _write_to_excel(self, xlsx_path: str, date_obj: datetime, summary: str, work_hours: int) -> bool:
         """写入 Excel 文件"""
