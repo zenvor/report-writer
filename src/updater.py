@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # 常量定义
 DEFAULT_WORK_HOURS = 8
 DEFAULT_SUMMARY_FALLBACK = "无提交"
-MAX_COMMIT_DISPLAY = 3
+MAX_COMMIT_DISPLAY = 10
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"  # Deepseek API 基础地址
 EXCEL_START_ROW = 3
 
@@ -268,7 +268,19 @@ class ReportUpdater:
 
     def _create_simple_summary(self, commits: List[str]) -> str:
         """创建简单的摘要"""
-        return ", ".join(commits[:MAX_COMMIT_DISPLAY])
+        if not commits:
+            return "无提交记录"
+        
+        # 生成条目式摘要
+        summary_items = []
+        for i, commit in enumerate(commits[:MAX_COMMIT_DISPLAY], 1):
+            summary_items.append(f"{i}. {commit}")
+        
+        if len(commits) > MAX_COMMIT_DISPLAY:
+            remaining_count = len(commits) - MAX_COMMIT_DISPLAY
+            summary_items.append(f"{MAX_COMMIT_DISPLAY + 1}. 以及其他{remaining_count}项提交")
+        
+        return " ".join(summary_items)
     
     def _call_deepseek_api(self, commits: List[str]) -> str:
         """调用 Deepseek API 生成摘要"""
@@ -296,7 +308,12 @@ class ReportUpdater:
     def _create_prompt(self, commits: List[str]) -> str:
         """创建API提示词"""
         return (
-            "以下是今天的 Git 提交信息，请总结为最多2句话的精简日报，每句话不超过30字：\n\n"
+            "以下是今天的 Git 提交信息，请总结为条目式日报。要求：\n"
+            "1. 每个条目用一句话描述一项工作\n"
+            "2. 格式：1. XXX 2. XXX 3. XXX\n"
+            "3. 合并相似的提交，避免重复\n"
+            "4. 用简洁的中文表达，突出关键点\n\n"
+            "Git 提交记录：\n"
             + "\n".join(f"- {commit}" for commit in commits)
         )
     

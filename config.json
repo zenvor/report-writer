@@ -12,8 +12,8 @@
   "deepseek_config": {
     "model": "deepseek-chat",
     "temperature": 0.4,
-    "max_tokens": 100,
-    "system_prompt": "你是一名中国程序员，擅长写精炼的技术日报。请将提交信息总结为最多2句话，每句话不超过30字。"
+    "max_tokens": 500,
+    "system_prompt": "你是一名中国程序员，擅长写技术日报。请将Git提交信息总结为条目式日报，每个条目用一句话描述一项具体工作内容。格式如：1. 完成了XXX功能开发 2. 修复了XXX问题 3. 优化了XXX性能。每句话简洁明了，突出关键点。"
   },
   "logging": {
     "level": "INFO",
@@ -32,6 +32,6 @@
   },
   "gitlab": {
     "default_branch": "dev",
-    "projects": [{ "id": "173", "branch": "dev" }, { "id": "172", "branch": "main" }]
+    "projects": [{ "id": "173", "branch": "dev" }, { "id": "172", "branch": "main" }, { "id": "157", "branch": "school_vr_admin" }, { "id": "147", "branch": "feature/exam-record-documentation" }]
   }
 }
