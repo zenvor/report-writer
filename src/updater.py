@@ -223,21 +223,18 @@ class ReportUpdater:
             project_id, commits = next(iter(all_commits.items()))
             return self._generate_single_project_summary(commits)
 
-        # 多项目，分别总结再合并
-        summaries = []
+        # 多项目，将所有提交合并后生成统一摘要
+        all_commits_merged = []
         for project_id, commits in all_commits.items():
-            if not commits:
-                continue
-            
-            logger.info(f"为项目 {project_id} 生成摘要")
-            single_summary = self._generate_single_project_summary(commits)
-            summaries.append(single_summary)
+            if commits:
+                all_commits_merged.extend(commits)
 
-        if not summaries:
+        if not all_commits_merged:
             return DEFAULT_SUMMARY_FALLBACK
 
-        # 添加序号并合并
-        return "\n".join(f"{i+1}. {s}" for i, s in enumerate(summaries))
+        # 对合并后的提交生成统一摘要
+        logger.info(f"为 {len(all_commits)} 个项目的合并提交生成摘要")
+        return self._generate_single_project_summary(all_commits_merged)
 
     def _generate_single_project_summary(self, commits: List[str]) -> str:
         """为单个项目生成摘要"""
@@ -257,14 +254,16 @@ class ReportUpdater:
         if not all_commits:
             return DEFAULT_SUMMARY_FALLBACK
 
-        summaries = []
+        # 将所有项目的提交合并，避免重复编号
+        all_commits_merged = []
         for project_id, commits in all_commits.items():
-            if not commits:
-                continue
-            summary = self._create_simple_summary(commits)
-            summaries.append(f"项目 {project_id}: {summary}")
+            if commits:
+                all_commits_merged.extend(commits)
         
-        return "\n".join(summaries)
+        if not all_commits_merged:
+            return DEFAULT_SUMMARY_FALLBACK
+            
+        return self._create_simple_summary(all_commits_merged)
 
     def _create_simple_summary(self, commits: List[str]) -> str:
         """创建简单的摘要"""
@@ -280,7 +279,7 @@ class ReportUpdater:
             remaining_count = len(commits) - MAX_COMMIT_DISPLAY
             summary_items.append(f"{MAX_COMMIT_DISPLAY + 1}. 以及其他{remaining_count}项提交")
         
-        return " ".join(summary_items)
+        return "\n".join(summary_items)
     
     def _call_deepseek_api(self, commits: List[str]) -> str:
         """调用 Deepseek API 生成摘要"""
@@ -308,11 +307,11 @@ class ReportUpdater:
     def _create_prompt(self, commits: List[str]) -> str:
         """创建API提示词"""
         return (
-            "以下是今天的 Git 提交信息，请总结为条目式日报。要求：\n"
-            "1. 每个条目用一句话描述一项工作\n"
-            "2. 格式：1. XXX 2. XXX 3. XXX\n"
-            "3. 合并相似的提交，避免重复\n"
-            "4. 用简洁的中文表达，突出关键点\n\n"
+            "以下是今天的 Git 提交信息，请提炼为精简的日报条目。要求：\n"
+            "1. 智能合并相关工作（如：多个修复合并为一条，同一模块的改动合并）\n"
+            "2. 提炼为少量核心工作条目（通常3-5条），避免罗列细节\n"
+            "3. 格式：1. XXX 2. XXX 3. XXX\n"
+            "4. 每条简洁明了，突出关键成果\n\n"
             "Git 提交记录：\n"
             + "\n".join(f"- {commit}" for commit in commits)
         )
