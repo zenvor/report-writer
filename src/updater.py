@@ -145,6 +145,62 @@ class ReportUpdater:
         except GitLabClientError as e:
             logger.warning(f"项目 {client.project_id}: 获取提交信息失败: {e}")
             return []
+
+    def _fetch_commits_range_safely(
+        self,
+        client: GitLabClient,
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[str]:
+        """安全地获取日期区间的提交信息"""
+        try:
+            commits = client.fetch_commits_range(start_date, end_date)
+            logger.info(
+                "项目 %s: 获取到 %d 条提交信息 (日期区间)",
+                client.project_id,
+                len(commits),
+            )
+            return commits
+        except GitLabClientError as e:
+            logger.warning(f"项目 {client.project_id}: 获取提交信息失败: {e}")
+            return []
+
+    def summarize_project_range(
+        self,
+        project_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        branch: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """生成指定项目在日期区间内的提交摘要"""
+        resolved_branch = self._resolve_project_branch(project_id, branch)
+        client = GitLabClient(project_id=str(project_id), branch=resolved_branch)
+        commits = self._fetch_commits_range_safely(client, start_date, end_date)
+        summary = self._generate_summary_with_fallback({str(project_id): commits})
+
+        return {
+            "projectId": str(project_id),
+            "branch": resolved_branch,
+            "startDate": start_date,
+            "endDate": end_date,
+            "commitCount": len(commits),
+            "commits": commits,
+            "summary": summary,
+        }
+
+    def _resolve_project_branch(self, project_id: str, preferred_branch: Optional[str]) -> str:
+        """根据配置解析项目分支"""
+        if preferred_branch:
+            return preferred_branch
+
+        for project in self.projects or []:
+            if str(project.get("id")) == str(project_id):
+                return project.get("branch", self.default_branch)
+
+        if self.gitlab_client and str(self.gitlab_client.project_id) == str(project_id):
+            return self.gitlab_client.default_branch
+
+        return self.default_branch
     
     def _generate_summary_with_fallback(self, all_commits: Dict[str, List[str]]) -> str:
         """生成摘要，带降级处理"""

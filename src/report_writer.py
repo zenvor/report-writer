@@ -172,6 +172,11 @@ def print_help():
     print("  --daemon           : 启动守护进程模式 (定时调度，仅Excel模式)")
     print("  --health-check     : 执行健康检查")
     print("  --status           : 显示调度器状态 (仅Excel模式)")
+    print("  --range-summary    : 输出指定项目日期区间的提交摘要")
+    print("  --start-date       : 区间开始日期 YYYY-MM-DD")
+    print("  --end-date         : 区间结束日期 YYYY-MM-DD")
+    print("  --range-project    : 区间摘要模式下指定项目ID")
+    print("  --range-branch     : 区间摘要模式下指定分支")
     print()
     print("  --gitlab-url URL   : GitLab服务器地址")
     print("  --gitlab-token TOKEN : GitLab访问令牌")
@@ -191,6 +196,7 @@ def print_help():
     print(f"  {PROGRAM_NAME} -f data/月报.xlsx  # 指定Excel文件")
     print(f"  {PROGRAM_NAME} -f data/日报.txt   # 指定文本文件")
     print(f"  {PROGRAM_NAME} -d 2025-01-15      # 指定日期")
+    print(f"  {PROGRAM_NAME} --range-summary --start-date 2025-01-01 --end-date 2025-01-31  # 输出指定区间摘要")
     print(f"  {PROGRAM_NAME} --health-check     # 健康检查")
     print(f"  {PROGRAM_NAME} -V                 # 显示版本")
 
@@ -239,6 +245,29 @@ def validate_hours(hours_str: str) -> int:
         return hours
     except ValueError:
         raise ReportWriterError(f"工作小时数必须是整数: {hours_str}")
+
+
+def resolve_project_id_for_range(updater: ReportUpdater, range_project: Optional[str], cli_project: Optional[str]) -> str:
+    """解析区间摘要模式使用的项目ID"""
+    if range_project:
+        return str(range_project)
+
+    if cli_project:
+        return str(cli_project)
+
+    project_ids = []
+    for project in updater.projects or []:
+        project_id = project.get("id")
+        if project_id:
+            project_ids.append(str(project_id))
+
+    if len(set(project_ids)) == 1:
+        return project_ids[0]
+
+    if not project_ids and updater.gitlab_client and updater.gitlab_client.project_id:
+        return str(updater.gitlab_client.project_id)
+
+    raise ReportWriterError("存在多个项目或未配置项目，请使用 --range-project 指定项目ID")
 
 
 def run_once_mode(excel_file: str, date_obj: datetime, hours: int) -> bool:
@@ -412,6 +441,13 @@ def main():
     
     # AI选项
     parser.add_argument("--deepseek-key", help="Deepseek API密钥")
+
+    # 区间摘要模式
+    parser.add_argument("--range-summary", action="store_true", help="输出指定项目日期区间的提交摘要")
+    parser.add_argument("--start-date", help="日期区间开始 YYYY-MM-DD")
+    parser.add_argument("--end-date", help="日期区间结束 YYYY-MM-DD")
+    parser.add_argument("--range-project", help="区间摘要模式下的项目ID")
+    parser.add_argument("--range-branch", help="区间摘要模式下的分支名称")
     
     args = parser.parse_args()
     
@@ -444,7 +480,43 @@ def main():
         if args.health_check:
             success = health_check_mode()
             return 0 if success else 1
-        
+
+        # 区间摘要模式
+        if args.range_summary:
+            if not args.start_date or not args.end_date:
+                raise ReportWriterError("区间摘要模式需要同时提供 --start-date 和 --end-date")
+
+            start_date = validate_date(args.start_date)
+            end_date = validate_date(args.end_date)
+
+            if end_date < start_date:
+                raise ReportWriterError("结束日期不能早于开始日期")
+
+            updater = ReportUpdater()
+            project_id = resolve_project_id_for_range(updater, args.range_project, args.gitlab_project)
+            result = updater.summarize_project_range(project_id, start_date, end_date, args.range_branch)
+            commits = result.get("commits", [])
+            branch_name = result.get("branch")
+
+            print(f"📦 项目ID: {result['projectId']} (分支: {branch_name})")
+            print(
+                f"📅 日期范围: {start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')}"
+            )
+            print(f"📊 提交数量: {result.get('commitCount', 0)}")
+
+            if commits:
+                print("🔖 提交列表:")
+                for index, commit in enumerate(commits, 1):
+                    print(f"  {index}. {commit}")
+            else:
+                print("🔖 提交列表: 无提交记录")
+
+            summary_text = result.get("summary") or "无提交"
+            print("\n📝 提交摘要:")
+            print(summary_text)
+
+            return 0
+
         # 确定Excel文件路径
         excel_file = args.file or args.excel_file
         if not excel_file:

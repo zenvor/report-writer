@@ -95,12 +95,45 @@ class GitLabClient:
         if not self._validate_configuration():
             logger.error("GitLab 配置不完整，无法获取提交信息")
             return []
-        
+
         target_branch = branch or self.default_branch
         logger.info(f"正在获取 {date_obj.strftime('%Y-%m-%d')} 在分支 {target_branch} 的提交信息")
-        
+
         try:
-            commits = self._fetch_commits_with_pagination(date_obj, target_branch)
+            since, until = self._get_date_range(date_obj)
+            commits = self._fetch_commits_with_pagination(since, until, target_branch)
+            logger.info(f"成功获取 {len(commits)} 条提交信息")
+            return commits
+        except Exception as e:
+            logger.error(f"获取提交信息失败: {e}")
+            return []
+
+    def fetch_commits_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        branch: Optional[str] = None
+    ) -> List[str]:
+        """获取指定日期区间的提交信息"""
+        if not self._validate_configuration():
+            logger.error("GitLab 配置不完整，无法获取提交信息")
+            return []
+
+        if end_date < start_date:
+            logger.error("结束日期早于开始日期，无法获取提交信息")
+            return []
+
+        target_branch = branch or self.default_branch
+        logger.info(
+            "正在获取 %s 至 %s 在分支 %s 的提交信息",
+            start_date.strftime('%Y-%m-%d'),
+            end_date.strftime('%Y-%m-%d'),
+            target_branch,
+        )
+
+        try:
+            since, until = self._get_date_range(start_date, end_date)
+            commits = self._fetch_commits_with_pagination(since, until, target_branch)
             logger.info(f"成功获取 {len(commits)} 条提交信息")
             return commits
         except Exception as e:
@@ -111,10 +144,8 @@ class GitLabClient:
         """验证配置的完整性"""
         return all([self.base_url, self.project_id, self.token])
     
-    def _fetch_commits_with_pagination(self, date_obj: datetime, branch: str) -> List[str]:
+    def _fetch_commits_with_pagination(self, since: str, until: str, branch: str) -> List[str]:
         """使用分页获取提交信息"""
-        since, until = self._get_date_range(date_obj)
-        
         headers = self._get_headers()
         params = self._get_base_params(since, until, branch)
         
@@ -144,10 +175,15 @@ class GitLabClient:
         
         return commits
     
-    def _get_date_range(self, date_obj: datetime) -> tuple[str, str]:
+    def _get_date_range(
+        self,
+        start_date: datetime,
+        end_date: Optional[datetime] = None
+    ) -> tuple[str, str]:
         """获取日期范围"""
-        since = date_obj.strftime("%Y-%m-%dT00:00:00Z")
-        until = date_obj.strftime("%Y-%m-%dT23:59:59Z")
+        end_point = end_date or start_date
+        since = start_date.strftime("%Y-%m-%dT00:00:00Z")
+        until = end_point.strftime("%Y-%m-%dT23:59:59Z")
         return since, until
     
     def _get_headers(self) -> Dict[str, str]:
