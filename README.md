@@ -241,7 +241,8 @@ Windows 用户可在 PowerShell 或 CMD 中通过 `python report-writer ...` 执
 
 **模板复制说明**：
 - 使用 `--use-template` 参数会自动从模板目录复制周报模板文件到 data/ 目录
-- 复制后的文件名格式为：`第N周周报表-YYYY年MM月.xlsx`（N为ISO标准周数）
+- 复制后的文件名格式为：`第N周周报表-姓名.xlsx`（N为当前周数减1）
+- 姓名从模板文件名中自动提取（模板格式为"姓名-第 n 周周报表.xlsx"）
 - 每次执行都会生成新的周报文件副本，不会覆盖已有文件
 - 模板目录默认为 `data/weekly report template`，可通过 `--template-dir` 指定其他位置
 

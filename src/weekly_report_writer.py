@@ -94,14 +94,17 @@ def copy_template_to_data_dir(template_path: str, data_dir: str = DEFAULT_DATA_D
         if week_start_date is None:
             week_start_date = get_week_start()
 
-        # 计算周数（ISO标准）
-        week_number = week_start_date.isocalendar()[1]
-        year = week_start_date.year
-        month = week_start_date.month
+        # 计算周数（ISO标准），减1
+        week_number = week_start_date.isocalendar()[1] - 1
 
-        # 新文件名格式：带日期的周报文件名
-        # 示例：2025年第44周周报-姓名.xlsx 或 10月第4周周报.xlsx
-        new_filename = f"第{week_number}周周报表-{week_start_date.strftime('%Y年%m月')}.xlsx"
+        # 从模板文件名中提取"姓名"部分
+        # 模板格式：姓名-第 n 周周报表.xlsx
+        template_name = template_file.stem  # 不含扩展名
+        name_part = template_name.split('-')[0].strip()  # 提取第一个"-"前的部分作为姓名
+
+        # 新文件名格式：第N周周报表-姓名.xlsx
+        # 示例：第44周周报表-范兴兴.xlsx
+        new_filename = f"第{week_number}周周报表-{name_part}.xlsx"
         target_path = data_path / new_filename
 
         # 复制文件
