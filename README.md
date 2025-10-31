@@ -114,6 +114,11 @@ AI 配置:
   --range-project <id>       指定区间摘要使用的项目 ID
   --range-branch <name>      指定区间摘要使用的分支
 
+周报生成:
+  --generate-weekly          生成周报（从月报读取本周日报）
+  --weekly-file <path>       周报文件路径（可选，默认自动查找）
+  --week-start <YYYY-MM-DD>  周一日期（可选，默认本周一）
+
 文件模式:
   Excel 模式                 自动写入月报，支持守护进程
   文本模式                   自动创建 data/日报.txt 并追加记录
@@ -136,6 +141,9 @@ Windows 用户可在 PowerShell 或 CMD 中通过 `python report-writer ...` 执
 
 # 启动守护进程
 ./report-writer --daemon
+
+# 生成本周周报
+./report-writer --generate-weekly
 
 # 详细日志 + 自定义配置
 ./report-writer -vv -C custom.json --gitlab-branch main
