@@ -80,6 +80,62 @@ def find_excel_file(data_dir: str = DEFAULT_DATA_DIR) -> Optional[str]:
     return str(txt_file_path)
 
 
+def find_monthly_report_file(data_dir: str = DEFAULT_DATA_DIR) -> Optional[str]:
+    """
+    自动查找月报文件
+
+    Args:
+        data_dir: 数据目录路径
+
+    Returns:
+        月报文件路径，未找到返回None
+    """
+    data_path = Path(data_dir)
+
+    if not data_path.exists():
+        logger.warning(f"数据目录不存在: {data_path}")
+        return None
+
+    # 查找包含"月报"的.xlsx文件
+    excel_files = list(data_path.glob("*.xlsx"))
+
+    for file in excel_files:
+        if "月报" in file.name:
+            logger.info(f"找到月报文件: {file}")
+            return str(file)
+
+    logger.warning("未找到月报文件（文件名需包含'月报'）")
+    return None
+
+
+def find_weekly_report_file(data_dir: str = DEFAULT_DATA_DIR) -> Optional[str]:
+    """
+    自动查找周报文件
+
+    Args:
+        data_dir: 数据目录路径
+
+    Returns:
+        周报文件路径，未找到返回None
+    """
+    data_path = Path(data_dir)
+
+    if not data_path.exists():
+        logger.warning(f"数据目录不存在: {data_path}")
+        return None
+
+    # 查找包含"周报"或"周"的.xlsx文件
+    excel_files = list(data_path.glob("*.xlsx"))
+
+    for file in excel_files:
+        if "周报" in file.name or "周" in file.name:
+            logger.info(f"找到周报文件: {file}")
+            return str(file)
+
+    logger.warning("未找到周报文件（文件名需包含'周报'或'周'）")
+    return None
+
+
 def write_to_text_file(txt_path: str, date_obj: datetime, summary: str) -> bool:
     """写入内容到文本文件"""
     try:
@@ -178,6 +234,10 @@ def print_help():
     print("  --range-project    : 区间摘要模式下指定项目ID")
     print("  --range-branch     : 区间摘要模式下指定分支")
     print()
+    print("  --generate-weekly  : 生成周报（从月报中读取本周日报内容）")
+    print("  --weekly-file PATH : 周报文件路径（可选，默认自动查找）")
+    print("  --week-start DATE  : 周一日期 YYYY-MM-DD（可选，默认本周一）")
+    print()
     print("  --gitlab-url URL   : GitLab服务器地址")
     print("  --gitlab-token TOKEN : GitLab访问令牌")
     print("  --gitlab-project ID : 项目ID")
@@ -197,6 +257,7 @@ def print_help():
     print(f"  {PROGRAM_NAME} -f data/日报.txt   # 指定文本文件")
     print(f"  {PROGRAM_NAME} -d 2025-01-15      # 指定日期")
     print(f"  {PROGRAM_NAME} --range-summary --start-date 2025-01-01 --end-date 2025-01-31  # 输出指定区间摘要")
+    print(f"  {PROGRAM_NAME} --generate-weekly  # 生成本周周报")
     print(f"  {PROGRAM_NAME} --health-check     # 健康检查")
     print(f"  {PROGRAM_NAME} -V                 # 显示版本")
 
@@ -448,7 +509,12 @@ def main():
     parser.add_argument("--end-date", help="日期区间结束 YYYY-MM-DD")
     parser.add_argument("--range-project", help="区间摘要模式下的项目ID")
     parser.add_argument("--range-branch", help="区间摘要模式下的分支名称")
-    
+
+    # 周报生成模式
+    parser.add_argument("--generate-weekly", action="store_true", help="生成周报")
+    parser.add_argument("--weekly-file", help="周报文件路径")
+    parser.add_argument("--week-start", help="周一日期 YYYY-MM-DD，默认本周一")
+
     args = parser.parse_args()
     
     # 处理帮助和版本
@@ -516,6 +582,47 @@ def main():
             print(summary_text)
 
             return 0
+
+        # 周报生成模式
+        if args.generate_weekly:
+            from weekly_report_writer import WeeklyReportWriter, WeeklyReportWriterError
+
+            # 查找月报文件
+            monthly_file = args.file or find_monthly_report_file()
+            if not monthly_file:
+                print("❌ 未找到月报文件，请使用 -f 选项指定月报文件路径")
+                print("   提示：月报文件名需包含'月报'")
+                return 1
+
+            # 查找周报文件
+            weekly_file = args.weekly_file or find_weekly_report_file()
+            if not weekly_file:
+                print("❌ 未找到周报文件，请使用 --weekly-file 选项指定周报文件路径")
+                print("   提示：周报文件名需包含'周报'或'周'")
+                return 1
+
+            # 解析周一日期
+            week_start = None
+            if args.week_start:
+                week_start = validate_date(args.week_start)
+
+            print(f"📁 月报文件: {monthly_file}")
+            print(f"📋 周报文件: {weekly_file}")
+
+            try:
+                writer = WeeklyReportWriter(monthly_file, weekly_file)
+                success = writer.generate_weekly_report(week_start)
+
+                if success:
+                    print("✅ 周报生成成功")
+                    return 0
+                else:
+                    print("❌ 周报生成失败")
+                    return 1
+
+            except WeeklyReportWriterError as e:
+                print(f"❌ 周报生成失败: {e}")
+                return 1
 
         # 确定Excel文件路径
         excel_file = args.file or args.excel_file

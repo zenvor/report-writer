@@ -10,6 +10,7 @@ ReportWriter 是一个命令行工具，用于从 GitLab 获取提交信息，�
 - Excel 写入与备份机制，避免数据丢失
 - 文本文件模式，适用于无 Excel / 无图形环境
 - 区间摘要模式，可输出指定时间段的提交清单与总结
+- **周报自动生成**，从月报中读取本周日报内容并填入周报表格
 
 ## 环境准备
 
@@ -179,6 +180,35 @@ Windows 用户可在 PowerShell 或 CMD 中通过 `python report-writer ...` 执
 - `--range-project` 指定项目 ID；若配置中仅有一个项目，可省略
 - `--range-branch` 覆盖区间查询的分支，例如 `--range-branch feature/api-refactor`
 - 区间摘要输出包含项目、分支、日期范围、提交数量、提交列表与摘要
+
+### 周报自动生成
+
+```bash
+# 自动查找月报和周报文件，生成本周周报
+./report-writer --generate-weekly
+
+# 指定月报和周报文件路径
+./report-writer --generate-weekly \
+  -f data/10月月报-范兴兴.xlsx \
+  --weekly-file data/姓名-第n周周报表.xlsx
+
+# 生成指定周的周报（指定周内任意日期）
+./report-writer --generate-weekly --week-start 2025-10-27
+
+# 详细日志模式
+./report-writer --generate-weekly -vv
+```
+
+**功能说明**：
+- 从月报文件中读取本周一到周五的日报内容
+- 按时间顺序填入周报的"完成重点工作"表格（序号1-5对应周一-周五）
+- 自动跳过节假日（某天无日报时该序号保持为空）
+- 支持多种日期格式（datetime 对象和 "2025/10/31" 字符串）
+
+**文件要求**：
+- 月报文件：文件名包含"月报"的 .xlsx 文件
+- 周报文件：文件名包含"周报"或"周"的 .xlsx 文件
+- 周报表格结构：A列=序号，B列=事项内容，第3-7行对应周一到周五
 
 ### 输出示例
 
