@@ -237,6 +237,8 @@ def print_help():
     print("  --generate-weekly  : 生成周报（从月报中读取本周日报内容）")
     print("  --weekly-file PATH : 周报文件路径（可选，默认自动查找）")
     print("  --week-start DATE  : 周一日期 YYYY-MM-DD（可选，默认本周一）")
+    print("  --use-template     : 从模板目录复制新周报文件到data目录")
+    print("  --template-dir PATH: 周报模板目录（默认：data/weekly report template）")
     print()
     print("  --gitlab-url URL   : GitLab服务器地址")
     print("  --gitlab-token TOKEN : GitLab访问令牌")
@@ -257,7 +259,8 @@ def print_help():
     print(f"  {PROGRAM_NAME} -f data/日报.txt   # 指定文本文件")
     print(f"  {PROGRAM_NAME} -d 2025-01-15      # 指定日期")
     print(f"  {PROGRAM_NAME} --range-summary --start-date 2025-01-01 --end-date 2025-01-31  # 输出指定区间摘要")
-    print(f"  {PROGRAM_NAME} --generate-weekly  # 生成本周周报")
+    print(f"  {PROGRAM_NAME} --generate-weekly                  # 生成本周周报")
+    print(f"  {PROGRAM_NAME} --generate-weekly --use-template # 从模板复制新周报并生成")
     print(f"  {PROGRAM_NAME} --health-check     # 健康检查")
     print(f"  {PROGRAM_NAME} -V                 # 显示版本")
 
@@ -514,6 +517,8 @@ def main():
     parser.add_argument("--generate-weekly", action="store_true", help="生成周报")
     parser.add_argument("--weekly-file", help="周报文件路径")
     parser.add_argument("--week-start", help="周一日期 YYYY-MM-DD，默认本周一")
+    parser.add_argument("--use-template", action="store_true", help="使用周报模板复制到data目录生成新周报")
+    parser.add_argument("--template-dir", help="周报模板目录路径（默认：data/weekly report template）")
 
     args = parser.parse_args()
     
@@ -594,35 +599,65 @@ def main():
                 print("   提示：月报文件名需包含'月报'")
                 return 1
 
-            # 查找周报文件
-            weekly_file = args.weekly_file or find_weekly_report_file()
-            if not weekly_file:
-                print("❌ 未找到周报文件，请使用 --weekly-file 选项指定周报文件路径")
-                print("   提示：周报文件名需包含'周报'或'周'")
-                return 1
-
             # 解析周一日期
             week_start = None
             if args.week_start:
                 week_start = validate_date(args.week_start)
 
-            print(f"📁 月报文件: {monthly_file}")
-            print(f"📋 周报文件: {weekly_file}")
+            # 处理周报文件（使用模板或指定文件）
+            if args.use_template:
+                # 使用模板复制模式
+                template_dir = args.template_dir or "data/weekly report template"
+                print(f"📁 月报文件: {monthly_file}")
+                print(f"📋 模板目录: {template_dir}")
+                print(f"📅 周期: {week_start.strftime('%Y-%m-%d') if week_start else '本周'}")
 
-            try:
-                writer = WeeklyReportWriter(monthly_file, weekly_file)
-                success = writer.generate_weekly_report(week_start)
+                try:
+                    # 初始化时自动从模板复制
+                    writer = WeeklyReportWriter(
+                        monthly_file,
+                        weekly_report_path="data",  # 传入目录，模板会复制到这里
+                        use_template=True,
+                        template_dir=template_dir,
+                        week_start_date=week_start
+                    )
+                    success = writer.generate_weekly_report(week_start)
 
-                if success:
-                    print("✅ 周报生成成功")
-                    return 0
-                else:
-                    print("❌ 周报生成失败")
+                    if success:
+                        print(f"✅ 周报生成成功: {writer.weekly_report_path.name}")
+                        return 0
+                    else:
+                        print("❌ 周报生成失败")
+                        return 1
+
+                except WeeklyReportWriterError as e:
+                    print(f"❌ 周报生成失败: {e}")
+                    return 1
+            else:
+                # 使用指定的周报文件
+                weekly_file = args.weekly_file or find_weekly_report_file()
+                if not weekly_file:
+                    print("❌ 未找到周报文件，请使用 --weekly-file 选项指定周报文件路径")
+                    print("   提示：周报文件名需包含'周报'或'周'，或使用 --use-template 从模板复制")
                     return 1
 
-            except WeeklyReportWriterError as e:
-                print(f"❌ 周报生成失败: {e}")
-                return 1
+                print(f"📁 月报文件: {monthly_file}")
+                print(f"📋 周报文件: {weekly_file}")
+
+                try:
+                    writer = WeeklyReportWriter(monthly_file, weekly_file)
+                    success = writer.generate_weekly_report(week_start)
+
+                    if success:
+                        print("✅ 周报生成成功")
+                        return 0
+                    else:
+                        print("❌ 周报生成失败")
+                        return 1
+
+                except WeeklyReportWriterError as e:
+                    print(f"❌ 周报生成失败: {e}")
+                    return 1
 
         # 确定Excel文件路径
         excel_file = args.file or args.excel_file

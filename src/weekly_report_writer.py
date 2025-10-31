@@ -5,6 +5,7 @@
 """
 
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict
@@ -23,10 +24,95 @@ MONTHLY_START_ROW = 3       # 月报数据起始行
 WEEKLY_CONTENT_COLUMN = 2   # 周报中的事项列（B列）
 WEEKLY_START_ROW = 3        # 周报数据起始行（序号1对应第3行）
 
+# 周报模板相关配置
+DEFAULT_TEMPLATE_DIR = "data/weekly report template"  # 周报模板目录
+DEFAULT_DATA_DIR = "data"                             # 数据目录
+
 
 class WeeklyReportWriterError(Exception):
     """周报生成器异常"""
     pass
+
+
+def find_template_file(template_dir: str = DEFAULT_TEMPLATE_DIR) -> Optional[str]:
+    """
+    在模板目录中查找周报模板文件
+
+    Args:
+        template_dir: 模板目录路径
+
+    Returns:
+        模板文件路径，未找到返回None
+    """
+    template_path = Path(template_dir)
+
+    if not template_path.exists():
+        logger.warning(f"模板目录不存在: {template_path}")
+        return None
+
+    # 查找.xlsx文件
+    template_files = list(template_path.glob("*.xlsx"))
+
+    if template_files:
+        # 优先返回包含"周报"的文件
+        for file in template_files:
+            if "周报" in file.name:
+                logger.info(f"找到周报模板: {file}")
+                return str(file)
+
+        # 返回第一个找到的文件
+        logger.info(f"找到模板文件: {template_files[0]}")
+        return str(template_files[0])
+
+    logger.warning("模板目录中未找到.xlsx文件")
+    return None
+
+
+def copy_template_to_data_dir(template_path: str, data_dir: str = DEFAULT_DATA_DIR, week_start_date: Optional[datetime] = None) -> Optional[str]:
+    """
+    将周报模板从模板目录复制到数据目录
+
+    Args:
+        template_path: 模板文件路径
+        data_dir: 目标数据目录
+        week_start_date: 周一日期，用于生成新文件名
+
+    Returns:
+        复制后的文件路径，复制失败返回None
+    """
+    try:
+        template_file = Path(template_path)
+        data_path = Path(data_dir)
+
+        if not template_file.exists():
+            raise WeeklyReportWriterError(f"模板文件不存在: {template_path}")
+
+        # 确保目标目录存在
+        data_path.mkdir(parents=True, exist_ok=True)
+
+        # 生成新文件名
+        if week_start_date is None:
+            week_start_date = get_week_start()
+
+        # 计算周数（ISO标准）
+        week_number = week_start_date.isocalendar()[1]
+        year = week_start_date.year
+        month = week_start_date.month
+
+        # 新文件名格式：带日期的周报文件名
+        # 示例：2025年第44周周报-姓名.xlsx 或 10月第4周周报.xlsx
+        new_filename = f"第{week_number}周周报表-{week_start_date.strftime('%Y年%m月')}.xlsx"
+        target_path = data_path / new_filename
+
+        # 复制文件
+        shutil.copy2(template_file, target_path)
+        logger.info(f"复制周报模板成功: {template_file.name} -> {new_filename}")
+
+        return str(target_path)
+
+    except Exception as e:
+        logger.error(f"复制周报模板失败: {e}")
+        raise WeeklyReportWriterError(f"复制周报模板失败: {e}")
 
 
 class WeeklyReportWriter:
@@ -37,23 +123,45 @@ class WeeklyReportWriter:
     按时间顺序填入周报Excel的"完成重点工作"表格
     """
 
-    def __init__(self, monthly_report_path: str, weekly_report_path: str):
+    def __init__(self, monthly_report_path: str, weekly_report_path: str, use_template: bool = False, template_dir: str = DEFAULT_TEMPLATE_DIR, week_start_date: Optional[datetime] = None):
         """
         初始化周报生成器
 
         Args:
             monthly_report_path: 月报文件路径
-            weekly_report_path: 周报文件路径
+            weekly_report_path: 周报文件路径（当use_template=False时使用）
+            use_template: 是否从模板复制周报（默认False）
+            template_dir: 模板目录路径
+            week_start_date: 周一日期，用于模板复制时生成新文件名
         """
         self.monthly_report_path = Path(monthly_report_path)
-        self.weekly_report_path = Path(weekly_report_path)
+        self.use_template = use_template
+        self.template_dir = template_dir
+        self.week_start_date = week_start_date
 
-        # 验证文件存在
+        # 验证月报文件存在
         if not self.monthly_report_path.exists():
             raise WeeklyReportWriterError(f"月报文件不存在: {monthly_report_path}")
 
-        if not self.weekly_report_path.exists():
-            raise WeeklyReportWriterError(f"周报文件不存在: {weekly_report_path}")
+        # 处理周报文件路径
+        if use_template:
+            # 从模板复制周报文件
+            template_file = find_template_file(template_dir)
+            if not template_file:
+                raise WeeklyReportWriterError(f"模板目录中未找到周报模板: {template_dir}")
+
+            # 复制模板到数据目录（weekly_report_path本身就是目录）
+            target_data_dir = weekly_report_path if Path(weekly_report_path).is_dir() else str(Path(weekly_report_path).parent)
+            copied_path = copy_template_to_data_dir(template_file, data_dir=target_data_dir, week_start_date=week_start_date)
+            if not copied_path:
+                raise WeeklyReportWriterError("复制周报模板失败")
+
+            self.weekly_report_path = Path(copied_path)
+        else:
+            # 使用指定的周报文件
+            self.weekly_report_path = Path(weekly_report_path)
+            if not self.weekly_report_path.exists():
+                raise WeeklyReportWriterError(f"周报文件不存在: {weekly_report_path}")
 
         logger.info(f"周报生成器初始化 - 月报: {self.monthly_report_path.name}, 周报: {self.weekly_report_path.name}")
 

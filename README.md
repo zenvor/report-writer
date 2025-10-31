@@ -118,6 +118,8 @@ AI 配置:
   --generate-weekly          生成周报（从月报读取本周日报）
   --weekly-file <path>       周报文件路径（可选，默认自动查找）
   --week-start <YYYY-MM-DD>  周一日期（可选，默认本周一）
+  --use-template             从模板目录复制新周报文件到 data/ 目录
+  --template-dir <path>      周报模板目录（默认：data/weekly report template）
 
 文件模式:
   Excel 模式                 自动写入月报，支持守护进程
@@ -191,6 +193,8 @@ Windows 用户可在 PowerShell 或 CMD 中通过 `python report-writer ...` 执
 
 ### 周报自动生成
 
+#### 模式1：使用现有周报文件
+
 ```bash
 # 自动查找月报和周报文件，生成本周周报
 ./report-writer --generate-weekly
@@ -202,9 +206,25 @@ Windows 用户可在 PowerShell 或 CMD 中通过 `python report-writer ...` 执
 
 # 生成指定周的周报（指定周内任意日期）
 ./report-writer --generate-weekly --week-start 2025-10-27
+```
+
+#### 模式2：从模板复制新周报文件
+
+```bash
+# 从模板目录复制新周报文件到data目录，然后生成周报
+./report-writer --generate-weekly --use-template
+
+# 指定自定义模板目录
+./report-writer --generate-weekly --use-template \
+  --template-dir /path/to/template/dir
+
+# 结合月报文件指定和模板复制
+./report-writer --generate-weekly --use-template \
+  -f data/10月月报-范兴兴.xlsx \
+  --week-start 2025-10-27
 
 # 详细日志模式
-./report-writer --generate-weekly -vv
+./report-writer --generate-weekly --use-template -vv
 ```
 
 **功能说明**：
@@ -215,8 +235,15 @@ Windows 用户可在 PowerShell 或 CMD 中通过 `python report-writer ...` 执
 
 **文件要求**：
 - 月报文件：文件名包含"月报"的 .xlsx 文件
-- 周报文件：文件名包含"周报"或"周"的 .xlsx 文件
+- 周报文件（模式1）：文件名包含"周报"或"周"的 .xlsx 文件，位于 data/ 目录
+- 周报模板（模式2）：模板文件位于 `data/weekly report template/` 目录
 - 周报表格结构：A列=序号，B列=事项内容，第3-7行对应周一到周五
+
+**模板复制说明**：
+- 使用 `--use-template` 参数会自动从模板目录复制周报模板文件到 data/ 目录
+- 复制后的文件名格式为：`第N周周报表-YYYY年MM月.xlsx`（N为ISO标准周数）
+- 每次执行都会生成新的周报文件副本，不会覆盖已有文件
+- 模板目录默认为 `data/weekly report template`，可通过 `--template-dir` 指定其他位置
 
 ### 输出示例
 
