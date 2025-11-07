@@ -68,6 +68,69 @@ def find_template_file(template_dir: str = DEFAULT_TEMPLATE_DIR) -> Optional[str
     return None
 
 
+def _extract_name_from_template(template_name: str) -> str:
+    """
+    从模板文件名中解析姓名，兼容“姓名-第n周周报表”和“第n周周报表-姓名”两种命名
+    """
+    parts = [part.strip() for part in template_name.split('-') if part.strip()]
+
+    if not parts:
+        raise WeeklyReportWriterError("模板文件名格式错误，无法提取姓名，请包含姓名和周报描述")
+
+    if len(parts) == 1:
+        return parts[0]
+
+    # 优先选择不包含“周报”关键字的片段，通常为人员姓名
+    for part in parts:
+        if "周报" not in part:
+            return part
+
+    # 如果所有片段都包含“周报”，退而求其次返回最后一个片段
+    return parts[-1]
+
+
+def _update_weekly_title_text(file_path: str, week_number: int) -> None:
+    """
+    将模板中的“第 n 周完成重点工作”占位文本替换为实际周次
+    """
+    workbook = None
+    try:
+        workbook = load_workbook(file_path)
+        worksheet = workbook.active
+
+        replacements = [
+            ("第 n 周完成重点工作", f"第{week_number}周完成重点工作"),
+            ("第n周完成重点工作", f"第{week_number}周完成重点工作"),
+            ("第 n 周", f"第{week_number}周"),
+            ("第n周", f"第{week_number}周"),
+        ]
+
+        updated = False
+        for row in worksheet.iter_rows():
+            for cell in row:
+                value = cell.value
+                if not isinstance(value, str):
+                    continue
+
+                original_value = value
+                for old, new in replacements:
+                    if old in value:
+                        value = value.replace(old, new)
+
+                if value != original_value:
+                    cell.value = value
+                    updated = True
+
+        if updated:
+            workbook.save(file_path)
+
+    except Exception as e:
+        raise WeeklyReportWriterError(f"更新周报标题失败: {e}")
+    finally:
+        if workbook:
+            workbook.close()
+
+
 def copy_template_to_data_dir(template_path: str, data_dir: str = DEFAULT_DATA_DIR, week_start_date: Optional[datetime] = None) -> Optional[str]:
     """
     将周报模板从模板目录复制到数据目录
@@ -97,10 +160,9 @@ def copy_template_to_data_dir(template_path: str, data_dir: str = DEFAULT_DATA_D
         # 计算周数（ISO标准），减1
         week_number = week_start_date.isocalendar()[1] - 1
 
-        # 从模板文件名中提取"姓名"部分
-        # 模板格式：姓名-第 n 周周报表.xlsx
+        # 从模板文件名中提取姓名，兼容姓名在任意一侧的模板
         template_name = template_file.stem  # 不含扩展名
-        name_part = template_name.split('-')[0].strip()  # 提取第一个"-"前的部分作为姓名
+        name_part = _extract_name_from_template(template_name)
 
         # 新文件名格式：第N周周报表-姓名.xlsx
         # 示例：第44周周报表-范兴兴.xlsx
@@ -110,6 +172,9 @@ def copy_template_to_data_dir(template_path: str, data_dir: str = DEFAULT_DATA_D
         # 复制文件
         shutil.copy2(template_file, target_path)
         logger.info(f"复制周报模板成功: {template_file.name} -> {new_filename}")
+
+        # 同步更新模板内部的周次标题
+        _update_weekly_title_text(str(target_path), week_number)
 
         return str(target_path)
 
